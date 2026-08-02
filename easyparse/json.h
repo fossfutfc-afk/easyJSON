@@ -30,7 +30,8 @@ namespace json {
     class jsonParser {
     public:
         jsonParser(std::string_view);
-        jsonValue parse(); // the only method that is anticipated to be apllied
+        jsonValue parse(); // prime-thod
+        bool is_at_end() const; // loop control
 
     private:
         void whitespace();
@@ -39,7 +40,6 @@ namespace json {
         char current() const;
         void consume(const char, const std::string&);
         bool try_consume(const char);
-        bool is_at_end() const;
 
         std::string handle_string();
         jsonValue::arr handle_array();
@@ -78,6 +78,10 @@ namespace json {
                 return jsonValue {std::monostate()}; // Unreachable
             }
         }
+    }
+
+    inline bool jsonParser::is_at_end() const {
+        return current_ >= file_.size();
     }
 
     inline void jsonParser::whitespace() {
@@ -137,10 +141,6 @@ namespace json {
             return false;
         advance();
         return true;
-    }
-
-    inline bool jsonParser::is_at_end() const {
-        return current_ >= file_.size();
     }
 
     inline std::string jsonParser::handle_string() {
