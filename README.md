@@ -1,4 +1,4 @@
-# easyparse
+# easyparse/json.h
 
 A minimal, header-only JSON parser for C++17 and later. No dependencies beyond the standard library — just drop [json.h](json.h) into your project and go.
 
