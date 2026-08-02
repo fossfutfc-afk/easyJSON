@@ -1,4 +1,4 @@
-# easyparse
+# easyparse/json.h
 
 A minimal, header-only JSON parser for C++17 and later. No dependencies beyond the standard library — just drop [json.h](json.h) into your project and go.
 
@@ -36,7 +36,6 @@ int main() {
 ```cpp
 json::jsonParser parser(src);
 while (!parser.is_at_end()) {
-    parser.whitespace();          // skip whitespace between values
     json::jsonValue val = parser.parse();
     // process val
 }
