@@ -1,108 +1,134 @@
-# easyparse/json.h
+# easyJSON
 
-A minimal, header-only JSON parser for C++17 and later. No dependencies beyond the standard library — just drop [json.h](json.h) into your project and go.
+Header-only JSON libraries for C++17. No dependencies beyond the standard library. Two flavours:
 
-No serialization, no deserialization, no streaming parsing, only a parse method, which should be enough for toy projects...I guess so?
+| File | Namespace | Description |
+|---|---|---|
+| `easyparse/json.h` | `json` | Minimal parser — ~300 lines, parse only |
+| `easyparse/json_adv.h` | `json_adv` | Full-featured — serialization, Unicode, SAX streaming |
 
-## Quick start
+---
+
+## easyparse/json.h — Lightweight parser
+
+Drop-in, ~300 lines. Parses JSON text into a `std::variant` tree.
 
 ```cpp
 #include "json.h"
-#include <iostream>
 
-int main() {
-    std::string_view src = R"({
-        "name": "easyparse",
-        "version": 1,
-        "dependencies": [],
-        "strict": true,
-        "metadata": null
-    })";
+json::jsonParser p(R"({"name":"easyparse","version":1})");
+json::jsonValue v = p.parse();
 
-    json::jsonParser parser(src);
-    json::jsonValue result = parser.parse();
-
-    // Access parsed data via std::visit or std::get
-    auto& obj = std::get<json::jsonValue::obj>(result.value);
-    std::cout << std::get<std::string>(obj["name"].value) << '\n';
-    // prints: easyparse
-}
+auto& obj = std::get<json::jsonValue::obj>(v.value);
+std::cout << std::get<std::string>(obj["name"].value); // "easyparse"
 ```
 
-### Parsing multiple values
+### API
 
-`parse()` consumes one value at a time and leaves the cursor after it. For multi-value input, loop:
-
-```cpp
-json::jsonParser parser(src);
-while (!parser.is_at_end()) {
-    json::jsonValue val = parser.parse();
-    // process val
-}
-```
-
-## API
-
-### `json::jsonValue`
-
-The parsed JSON tree. Values are stored in a `std::variant`:
-
-| C++ type | JSON type |
+| Type | Role |
 |---|---|
-| `std::monostate` | `null` |
-| `int` | number (integer) |
-| `double` | number (float) |
-| `std::string` | string |
-| `bool` | `true` / `false` |
-| `std::vector<jsonValue>` | array |
-| `std::unordered_map<std::string, jsonValue>` | object |
+| `json::jsonValue` | Variant tree: `monostate`/`int`/`double`/`string`/`bool`/`arr`/`obj` |
+| `json::jsonParser` | `parse()` reads one value; `is_at_end()` controls loops |
+| `json::jsonException` | `std::exception` subclass, `.what()` for details |
 
-Convenience aliases:
+### Features
 
-- `jsonValue::arr` — `std::vector<jsonValue>`
-- `jsonValue::obj` — `std::unordered_map<std::string, jsonValue>`
+- Objects / arrays / strings / numbers / `true` / `false` / `null`
+- Escape sequences: `\" \\ \/ \b \f \n \r \t \uXXXX`
+- Scientific notation (`1.5e-3`), leading-zero rejection (`01` → error)
+- Duplicate-key detection, trailing-comma rejection
+- NaN/Infinity are rejected
 
-### `json::jsonParser`
+---
+
+## easyparse/json_adv.h — Full-featured
+
+Same parsing core, plus serialization, full Unicode (surrogate pairs), SAX streaming, and numeric type promotion.
 
 ```cpp
-explicit jsonParser(std::string_view src);
-jsonValue parse();
+#include "json_adv.h"
+using namespace json_adv;
+
+// --- Parse ---
+jsonValue v = jsonParser(R"({"items":[1,2,3]})").parse();
+
+// --- Serialize (compact) ---
+std::string s = to_string(v);
+// → {"items":[1,2,3]}
+
+// --- Serialize (pretty-print) ---
+std::string s2 = to_string(v, Indent::TwoSpaces);
+// → {
+//     "items": [
+//       1,
+//       2,
+//       3
+//     ]
+//   }
+
+// --- SAX streaming ---
+struct MyHandler : SaxHandler {
+    void on_int(int v)              override { /* ... */ }
+    void on_string(const std::string& v) override { /* ... */ }
+    void on_begin_object()          override { /* ... */ }
+    void on_key(const std::string& k) override { /* ... */ }
+    void on_end_object()            override { /* ... */ }
+    // ... all 10 events
+};
+MyHandler h;
+SaxParser(R"({"a":1})", h).parse();
 ```
 
-- **Constructor** — takes the JSON source as a `std::string_view`. The source must outlive the parser (it is not copied).
-- **`parse()`** — parses exactly **one** JSON value from the current position and returns it as a `json::jsonValue`. Throws `json::jsonException` on any error. To parse multiple values (e.g. a JSON Lines file), call `parse()` in a loop.
+### API
 
-### `json::jsonException`
+Everything in `json_adv` plus:
 
-Inherits from `std::exception`. Call `.what()` for a human-readable error message.
+| Symbol | Role |
+|---|---|
+| `jsonValue` | Variant: `monostate`/`int`/`long long`/`double`/`long double`/`string`/`bool`/`arr`/`obj` |
+| `jsonParser` | Same as lightweight, with surrogate-pair-aware `\u` |
+| `to_string(v, indent?)` | Serialize to JSON string (compact or pretty) |
+| `encode_utf8(cp)` | Codepoint → UTF-8 bytes |
+| `SaxHandler` | Abstract callback interface (10 events) |
+| `SaxParser(sv, handler)` | Streaming parser, fires callbacks |
 
-## What it handles
+### What json_adv adds over json.h
 
-- **Objects** `{}` — including duplicate-key detection and trailing-comma rejection
-- **Arrays** `[]` — including trailing-comma rejection
-- **Strings** — full escape-sequence support: `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, and `\uXXXX`
-- **Numbers** — integers (`int`) and floats (`double`), with:
-  - Leading-zero rejection (`01` is invalid, `0.1` is fine)
-  - Scientific notation (`1e10`, `1.5E-3`)
-  - `NaN` and `Infinity` are rejected (not valid JSON)
-- **Keywords** — `true`, `false`, `null`
+- **Serialization** — `to_string()` with compact / pretty-print modes
+- **Full Unicode** — surrogate pair support (`😀` → 😀), `encode_utf8()`
+- **Numeric promotion** — `int` → `long long` → `double` → `long double` on overflow
+- **SAX streaming** — callback-driven parser for large files, zero tree allocation
+
+### SaxHandler events
+
+| Method | Fires on |
+|---|---|
+| `on_null()` | `null` |
+| `on_bool(bool)` | `true` / `false` |
+| `on_int(int)` | integer number |
+| `on_double(double)` | floating-point number |
+| `on_string(string)` | string value |
+| `on_begin_object()` | `{` |
+| `on_key(string)` | object key |
+| `on_end_object()` | `}` |
+| `on_begin_array()` | `[` |
+| `on_end_array()` | `]` |
 
 ## Strictness
 
-This parser follows strict JSON — it intentionally does **not** support:
+Both parsers follow strict JSON. They do **not** support:
 
-- Trailing commas
+- Trailing commas (rejected with a specific error message)
 - Comments (`//` or `/* */`)
 - Unquoted keys
 - Single-quoted strings
-- `NaN` / `Infinity` as numeric literals
+- `NaN` / `Infinity` as literals (serialization outputs `null` for these)
 
 ## Requirements
 
-- **C++17** or later (for `std::variant`, `std::string_view`, `std::optional`, structured bindings)
-- No external dependencies — standard library only
+- **C++17** or later
+- Standard library only — no external dependencies
 
 ## Other
 
-- It's a learning project based on nlohmann's youtube instructions and I'm so grateful to him for offering such wonderful instructions.
-- Feel free to change anything, copy paste it anywhere you want.
+A learning project inspired by [nlohmann/json](https://github.com/nlohmann/json). Use it, change it, copy it anywhere.
